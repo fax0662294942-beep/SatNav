@@ -1,4 +1,4 @@
-var CACHE_NAME = "satnav-v2";
+var CACHE_NAME = "satnav-v3";
 var ASSETS = [
   "./index.html",
   "./manifest.json",

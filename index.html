@@ -259,7 +259,13 @@ function orsRequest(orsKey, profile, coordinates, options, alternativeRoutes){
   });
 }
 
-function countTrafficLightsOnce(coordsLatLon){
+var OVERPASS_ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.openstreetmap.ru/api/interpreter"
+];
+
+function countTrafficLightsOnce(coordsLatLon, endpointIdx){
   // coordsLatLon: array of [lat, lon]
   // decimate to keep query size reasonable
   var maxPoints = 300;
@@ -272,8 +278,9 @@ function countTrafficLightsOnce(coordsLatLon){
   }
   var coordStr = pts.map(function(p){ return p[0] + "," + p[1]; }).join(",");
   var query = "[out:json][timeout:25];node(around:22," + coordStr + ")[highway=traffic_signals];out ids;";
+  var url = OVERPASS_ENDPOINTS[endpointIdx % OVERPASS_ENDPOINTS.length];
 
-  return fetch("https://overpass-api.de/api/interpreter", {
+  return fetch(url, {
     method: "POST",
     body: "data=" + encodeURIComponent(query)
   }).then(function(r){
@@ -284,25 +291,25 @@ function countTrafficLightsOnce(coordsLatLon){
   });
 }
 
-function countTrafficLightsWithRetry(coordsLatLon, attemptsLeft){
-  return countTrafficLightsOnce(coordsLatLon).catch(function(err){
+function countTrafficLightsWithRetry(coordsLatLon, attemptsLeft, endpointIdx){
+  return countTrafficLightsOnce(coordsLatLon, endpointIdx).catch(function(err){
     if (attemptsLeft > 0) {
-      return new Promise(function(resolve){ setTimeout(resolve, 1200); })
-        .then(function(){ return countTrafficLightsWithRetry(coordsLatLon, attemptsLeft - 1); });
+      return new Promise(function(resolve){ setTimeout(resolve, 1500); })
+        .then(function(){ return countTrafficLightsWithRetry(coordsLatLon, attemptsLeft - 1, endpointIdx + 1); });
     }
     throw err;
   });
 }
 
-// Processes routes ONE AT A TIME (Overpass public server rejects parallel requests).
-// onEach(idx, count|null) is called as each result (or failure) comes in.
+// Processes routes ONE AT A TIME (Overpass public servers reject parallel/rapid requests).
+// onEach(idx, count|"error") is called as each result (or failure) comes in.
 function countTrafficLightsSequential(routesCoords, onEach){
   var i = 0;
   function next(){
     if (i >= routesCoords.length) return;
     var idx = i;
     i = i + 1;
-    countTrafficLightsWithRetry(routesCoords[idx], 1)
+    countTrafficLightsWithRetry(routesCoords[idx], OVERPASS_ENDPOINTS.length - 1, 0)
       .then(function(count){
         onEach(idx, count);
       })
@@ -310,10 +317,17 @@ function countTrafficLightsSequential(routesCoords, onEach){
         onEach(idx, "error");
       })
       .then(function(){
-        setTimeout(next, 500);
+        setTimeout(next, 1800);
       });
   }
   next();
+}
+
+// Single-route retry, used by the manual "Riprova" button.
+function countTrafficLightsSingle(coords, onDone){
+  countTrafficLightsWithRetry(coords, OVERPASS_ENDPOINTS.length - 1, 0)
+    .then(function(count){ onDone(count); })
+    .catch(function(){ onDone("error"); });
 }
 
 // ---------- small UI pieces ----------
@@ -856,8 +870,34 @@ function App(){
                     </div>
                     {preferFewerLights && (
                       <div className="alt-lights">
-                        <b>{alt.lights === null ? "…" : (alt.lights === "error" ? "N/D" : "~" + alt.lights)}</b>
-                        <small>semafori</small>
+                        {alt.lights === "error" ? (
+                          <button
+                            className="icon-btn"
+                            style={{ fontSize: "11px", width: "auto", padding: "6px 10px" }}
+                            onClick={function(e){
+                              e.stopPropagation();
+                              setScooterAlts(function(prev){
+                                var next = prev.slice();
+                                next[i] = Object.assign({}, next[i], { lights: null });
+                                return next;
+                              });
+                              countTrafficLightsSingle(alt.coords, function(result){
+                                setScooterAlts(function(prev){
+                                  var next2 = prev.slice();
+                                  if (next2[i]) next2[i] = Object.assign({}, next2[i], { lights: result });
+                                  return next2;
+                                });
+                              });
+                            }}
+                          >
+                            ↻ Riprova
+                          </button>
+                        ) : (
+                          <React.Fragment>
+                            <b>{alt.lights === null ? "…" : "~" + alt.lights}</b>
+                            <small>semafori</small>
+                          </React.Fragment>
+                        )}
                       </div>
                     )}
                   </div>
