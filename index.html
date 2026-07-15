@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"/>
+<title>SatNav</title>
+<link rel="manifest" href="manifest.json"/>
+<meta name="theme-color" content="#0f1e17"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="SatNav"/>
+<link rel="apple-touch-icon" href="icon-192.png"/>
+<link rel="icon" href="icon-192.png"/>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<style>
+  :root{
+    --bg:#0f1e17;
+    --panel:#16281f;
+    --panel2:#1c3226;
+    --line:#2a4536;
+    --text:#eaf3ec;
+    --muted:#8fae9d;
+    --accent:#4fd1a0;
+    --accent2:#2e8b6f;
+    --warn:#e0a95c;
+    --danger:#e0705c;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    -webkit-tap-highlight-color:transparent;
+    overscroll-behavior:none;
+  }
+  #root{height:100%;display:flex;flex-direction:column;}
+  #boot-error{position:fixed;inset:0;background:#2a1414;color:#ffb4b4;padding:20px;font-family:monospace;font-size:13px;white-space:pre-wrap;overflow:auto;z-index:9999;display:none;}
+
+  .app{display:flex;flex-direction:column;height:100%;}
+  .topbar{
+    padding:14px 16px calc(10px + env(safe-area-inset-top)) 16px;
+    padding-top:calc(14px + env(safe-area-inset-top));
+    display:flex;align-items:center;justify-content:space-between;
+    background:linear-gradient(180deg,var(--panel2),var(--panel));
+    border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-mark{
+    width:32px;height:32px;border-radius:9px;
+    background:conic-gradient(from 220deg, var(--accent), var(--accent2), var(--accent));
+    display:flex;align-items:center;justify-content:center;font-size:16px;
+  }
+  .brand-name{font-weight:700;letter-spacing:0.2px;font-size:16px;}
+  .brand-sub{font-size:10.5px;color:var(--muted);margin-top:1px;}
+  .icon-btn{
+    width:36px;height:36px;border-radius:10px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--text);display:flex;align-items:center;justify-content:center;
+    font-size:16px;
+  }
+
+  .content{flex:1;overflow-y:auto;padding:16px;padding-bottom:32px;}
+
+  .vehicle-toggle{
+    display:flex;gap:8px;background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;padding:4px;margin-bottom:16px;
+  }
+  .vehicle-toggle button{
+    flex:1;border:none;background:transparent;color:var(--muted);
+    padding:10px 8px;border-radius:999px;font-size:14px;font-weight:600;
+    display:flex;align-items:center;justify-content:center;gap:6px;
+  }
+  .vehicle-toggle button.active{background:var(--accent);color:#0b1a13;}
+
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px;margin-bottom:12px;
+  }
+  .card h3{margin:0 0 10px 0;font-size:13px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.4px;}
+
+  .field{margin-bottom:10px;position:relative;}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;}
+  .field input{
+    width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    padding:11px 12px;color:var(--text);font-size:15px;outline:none;
+  }
+  .field input:focus{border-color:var(--accent);}
+  .autocomplete-list{
+    position:absolute;top:100%;left:0;right:0;z-index:20;
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    margin-top:4px;max-height:220px;overflow-y:auto;
+  }
+  .autocomplete-item{padding:10px 12px;font-size:13.5px;border-bottom:1px solid var(--line);}
+  .autocomplete-item:last-child{border-bottom:none;}
+
+  .dim-row{display:flex;gap:8px;}
+  .dim-row .field{flex:1;}
+
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:6px 2px;}
+  .toggle-row span{font-size:14px;}
+  .switch{position:relative;width:44px;height:26px;background:var(--line);border-radius:999px;border:none;}
+  .switch.on{background:var(--accent);}
+  .switch::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .15s;}
+  .switch.on::after{transform:translateX(18px);}
+
+  .btn-primary{
+    width:100%;background:var(--accent);color:#0b1a13;border:none;border-radius:12px;
+    padding:14px;font-size:15px;font-weight:700;margin-top:4px;
+  }
+  .btn-primary:disabled{opacity:0.5;}
+  .btn-secondary{
+    width:100%;background:transparent;color:var(--accent);border:1px solid var(--accent2);border-radius:12px;
+    padding:12px;font-size:14px;font-weight:600;margin-top:8px;
+  }
+  .btn-google{
+    width:100%;background:#fff;color:#222;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:600;
+  }
+
+  .banner{
+    background:rgba(224,169,92,0.12);border:1px solid var(--warn);color:var(--warn);
+    border-radius:10px;padding:10px 12px;font-size:12.5px;margin-bottom:12px;line-height:1.4;
+  }
+
+  #map{width:100%;height:260px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);margin-bottom:12px;}
+
+  .alt-card{
+    background:var(--panel2);border:1.5px solid var(--line);border-radius:12px;
+    padding:12px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;
+  }
+  .alt-card.selected{border-color:var(--accent);background:rgba(79,209,160,0.08);}
+  .alt-card .alt-label{font-size:13px;color:var(--muted);margin-bottom:2px;}
+  .alt-card .alt-dist{font-size:19px;font-weight:700;}
+  .alt-card .alt-lights{text-align:right;}
+  .alt-card .alt-lights b{font-size:19px;}
+  .alt-card .alt-lights small{display:block;color:var(--muted);font-size:11px;}
+
+  .steps{margin-top:6px;}
+  .step{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13.5px;}
+  .step:last-child{border-bottom:none;}
+  .step-idx{width:22px;height:22px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);flex-shrink:0;}
+  .step-dist{color:var(--muted);font-size:12px;margin-top:2px;}
+
+  .center-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:24px;text-align:center;}
+  .center-screen .brand-mark{width:56px;height:56px;font-size:26px;margin-bottom:16px;}
+  .center-screen h2{margin:0 0 6px 0;}
+  .center-screen p{color:var(--muted);font-size:14px;margin:0 0 22px 0;}
+
+  .spinner{width:20px;height:20px;border:2.5px solid rgba(255,255,255,0.25);border-top-color:#0b1a13;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle;margin-right:8px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .error-box{background:rgba(224,112,92,0.12);border:1px solid var(--danger);color:#ffb4a8;border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="boot-error"></div>
+<script>
+  window.onerror = function(msg, src, line, col, err){
+    var el = document.getElementById('boot-error');
+    el.style.display = 'block';
+    el.textContent = 'ERRORE: ' + msg + '\n' + src + ':' + line + ':' + col + '\n' + (err && err.stack ? err.stack : '');
+  };
+</script>
+
+<script type="text/babel" data-presets="react">
+/* @jsxRuntime classic */
+
+var firebaseConfig = {
+  apiKey: "AIzaSyDue3aMzi-8-zflMvlgdGp1TzzId1CZNaI",
+  authDomain: "viaggi-camper.firebaseapp.com",
+  projectId: "viaggi-camper",
+  storageBucket: "viaggi-camper.firebasestorage.app",
+  messagingSenderId: "172431561795",
+  appId: "1:172431561795:web:ae6ef3e9c2bbdfeb2d70f6"
+};
+firebase.initializeApp(firebaseConfig);
+var auth = firebase.auth();
+var db = firebase.firestore();
+
+var NS = "satNav_";
+
+// ---------- helpers ----------
+
+function formatKm(meters){
+  var km = meters / 1000;
+  return km.toFixed(1).replace(".", ",") + " km";
+}
+
+function formatDuration(seconds){
+  var mins = Math.round(seconds / 60);
+  if (mins < 60) return mins + " min";
+  var h = Math.floor(mins / 60);
+  var m = mins % 60;
+  return h + " h " + m + " min";
+}
+
+function debounce(fn, wait){
+  var t = null;
+  return function(){
+    var args = arguments;
+    var self = this;
+    clearTimeout(t);
+    t = setTimeout(function(){ fn.apply(self, args); }, wait);
+  };
+}
+
+function geocodeSearch(query, callback){
+  if (!query || query.length < 3) { callback([]); return; }
+  var url = "https://nominatim.openstreetmap.org/search?format=json&addressdetails=0&limit=5&countrycodes=it&q=" + encodeURIComponent(query);
+  fetch(url, { headers: { "Accept-Language": "it" } })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var results = data.map(function(d){
+        return { label: d.display_name, lat: parseFloat(d.lat), lon: parseFloat(d.lon) };
+      });
+      callback(results);
+    })
+    .catch(function(){ callback([]); });
+}
+
+function orsRequest(orsKey, profile, coordinates, options, alternativeRoutes){
+  var body = {
+    coordinates: coordinates,
+    instructions: true,
+    units: "m",
+    geometry_simplify: false
+  };
+  if (options) body.options = options;
+  if (alternativeRoutes) body.alternative_routes = alternativeRoutes;
+
+  return fetch("https://api.openrouteservice.org/v2/directions/" + profile + "/geojson", {
+    method: "POST",
+    headers: {
+      "Authorization": orsKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  }).then(function(r){
+    if (!r.ok) {
+      return r.json().then(function(e){
+        var msg = (e && e.error && e.error.message) ? e.error.message : ("Errore ORS " + r.status);
+        throw new Error(msg);
+      });
+    }
+    return r.json();
+  });
+}
+
+function countTrafficLights(coordsLatLon, callback){
+  // coordsLatLon: array of [lat, lon]
+  // decimate to keep query size reasonable
+  var maxPoints = 300;
+  var pts = coordsLatLon;
+  if (pts.length > maxPoints) {
+    var step = Math.ceil(pts.length / maxPoints);
+    var reduced = [];
+    for (var i = 0; i < pts.length; i += step) reduced.push(pts[i]);
+    pts = reduced;
+  }
+  var coordStr = pts.map(function(p){ return p[0] + "," + p[1]; }).join(",");
+  var query = "[out:json][timeout:25];node(around:22," + coordStr + ")[highway=traffic_signals];out ids;";
+
+  fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST",
+    body: "data=" + encodeURIComponent(query)
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var count = (data.elements || []).length;
+      callback(count);
+    })
+    .catch(function(){ callback(null); });
+}
+
+// ---------- small UI pieces ----------
+
+function AddressField(props){
+  var value = props.value;
+  var onChange = props.onChange;
+  var onSelect = props.onSelect;
+  var placeholder = props.placeholder;
+  var label = props.label;
+
+  var suggestionsState = React.useState([]);
+  var suggestions = suggestionsState[0];
+  var setSuggestions = suggestionsState[1];
+
+  var searchDebounced = React.useRef(debounce(function(q){
+    geocodeSearch(q, setSuggestions);
+  }, 400)).current;
+
+  function handleInput(e){
+    var v = e.target.value;
+    onChange(v);
+    searchDebounced(v);
+  }
+
+  function handlePick(s){
+    onSelect(s);
+    setSuggestions([]);
+  }
+
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={value}
+        onChange={handleInput}
+        autoComplete="off"
+      />
+      {suggestions.length > 0 && (
+        <div className="autocomplete-list">
+          {suggestions.map(function(s, i){
+            return (
+              <div className="autocomplete-item" key={i} onClick={function(){ handlePick(s); }}>
+                {s.label}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MapView(props){
+  var route = props.route; // array of [lat,lon]
+  var altRoutes = props.altRoutes; // array of {coords, selected}
+  var origin = props.origin;
+  var dest = props.dest;
+  var mapRef = React.useRef(null);
+  var leafletMapRef = React.useRef(null);
+  var layersRef = React.useRef([]);
+
+  React.useEffect(function(){
+    if (!leafletMapRef.current) {
+      leafletMapRef.current = L.map(mapRef.current, { attributionControl: true }).setView([41.9, 12.5], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(leafletMapRef.current);
+    }
+  }, []);
+
+  React.useEffect(function(){
+    var map = leafletMapRef.current;
+    if (!map) return;
+    layersRef.current.forEach(function(l){ map.removeLayer(l); });
+    layersRef.current = [];
+
+    var bounds = [];
+
+    if (altRoutes && altRoutes.length > 0) {
+      altRoutes.forEach(function(r){
+        var color = r.selected ? "#4fd1a0" : "#5c7568";
+        var weight = r.selected ? 5 : 3;
+        var line = L.polyline(r.coords, { color: color, weight: weight, opacity: r.selected ? 1 : 0.6 }).addTo(map);
+        layersRef.current.push(line);
+        bounds = bounds.concat(r.coords);
+      });
+    } else if (route && route.length > 0) {
+      var line2 = L.polyline(route, { color: "#4fd1a0", weight: 5 }).addTo(map);
+      layersRef.current.push(line2);
+      bounds = bounds.concat(route);
+    }
+
+    if (origin) {
+      var m1 = L.circleMarker([origin.lat, origin.lon], { radius: 7, color: "#4fd1a0", fillColor: "#4fd1a0", fillOpacity: 1 }).addTo(map);
+      layersRef.current.push(m1);
+      bounds.push([origin.lat, origin.lon]);
+    }
+    if (dest) {
+      var m2 = L.circleMarker([dest.lat, dest.lon], { radius: 7, color: "#e0705c", fillColor: "#e0705c", fillOpacity: 1 }).addTo(map);
+      layersRef.current.push(m2);
+      bounds.push([dest.lat, dest.lon]);
+    }
+
+    if (bounds.length > 0) {
+      map.fitBounds(bounds, { padding: [24, 24] });
+    }
+  }, [route, altRoutes, origin, dest]);
+
+  return <div id="map" ref={mapRef}></div>;
+}
+
+function StepsList(props){
+  var steps = props.steps;
+  if (!steps || steps.length === 0) return null;
+  return (
+    <div className="card">
+      <h3>Istruzioni percorso</h3>
+      <div className="steps">
+        {steps.map(function(s, i){
+          return (
+            <div className="step" key={i}>
+              <div className="step-idx">{i + 1}</div>
+              <div>
+                <div>{s.instruction}</div>
+                <div className="step-dist">{formatKm(s.distance)}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------- main screens ----------
+
+function LoginScreen(){
+  function handleLogin(){
+    var provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider).catch(function(e){
+      alert("Errore login: " + e.message);
+    });
+  }
+  return (
+    <div className="center-screen">
+      <div className="brand-mark">🛰️</div>
+      <h2>SatNav</h2>
+      <p>Navigazione dedicata per camper e scooter.<br/>Accedi per continuare.</p>
+      <button className="btn-google" onClick={handleLogin}>Accedi con Google</button>
+    </div>
+  );
+}
+
+function SettingsPanel(props){
+  var orsKey = props.orsKey;
+  var onSave = props.onSave;
+  var keyState = React.useState(orsKey || "");
+  var value = keyState[0];
+  var setValue = keyState[1];
+
+  return (
+    <div className="card">
+      <h3>Configurazione OpenRouteService</h3>
+      <p style={{ fontSize: "12.5px", color: "var(--muted)", marginTop: 0 }}>
+        Serve una API key gratuita da openrouteservice.org/dev-dashboard. Viene salvata su Firestore e condivisa tra i dispositivi.
+      </p>
+      <div className="field">
+        <label>API Key</label>
+        <input type="text" value={value} onChange={function(e){ setValue(e.target.value); }} placeholder="Incolla qui la tua chiave" />
+      </div>
+      <button className="btn-primary" onClick={function(){ onSave(value); }}>Salva chiave</button>
+    </div>
+  );
+}
+
+function CamperForm(props){
+  var dims = props.dims;
+  var onChange = props.onChange;
+
+  function handleField(field){
+    return function(e){
+      var v = parseFloat(e.target.value.replace(",", "."));
+      var next = Object.assign({}, dims);
+      next[field] = isNaN(v) ? "" : v;
+      onChange(next);
+    };
+  }
+
+  return (
+    <div className="card">
+      <h3>Dimensioni camper</h3>
+      <div className="dim-row">
+        <div className="field">
+          <label>Altezza (m)</label>
+          <input type="number" step="0.1" value={dims.height} onChange={handleField("height")} placeholder="3.0" />
+        </div>
+        <div className="field">
+          <label>Larghezza (m)</label>
+          <input type="number" step="0.1" value={dims.width} onChange={handleField("width")} placeholder="2.3" />
+        </div>
+        <div className="field">
+          <label>Peso (t)</label>
+          <input type="number" step="0.1" value={dims.weight} onChange={handleField("weight")} placeholder="3.5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScooterForm(props){
+  var allowHighway = props.allowHighway;
+  var onToggleHighway = props.onToggleHighway;
+  var preferFewerLights = props.preferFewerLights;
+  var onTogglePreferLights = props.onTogglePreferLights;
+
+  return (
+    <div className="card">
+      <h3>Opzioni scooter</h3>
+      <div className="toggle-row">
+        <span>Consenti autostrada</span>
+        <button className={"switch" + (allowHighway ? " on" : "")} onClick={function(){ onToggleHighway(!allowHighway); }}></button>
+      </div>
+      <div className="toggle-row">
+        <span>Mostra numero semafori per alternativa</span>
+        <button className={"switch" + (preferFewerLights ? " on" : "")} onClick={function(){ onTogglePreferLights(!preferFewerLights); }}></button>
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  var userState = React.useState(null);
+  var user = userState[0];
+  var setUser = userState[1];
+
+  var loadingAuthState = React.useState(true);
+  var loadingAuth = loadingAuthState[0];
+  var setLoadingAuth = loadingAuthState[1];
+
+  var orsKeyState = React.useState("");
+  var orsKey = orsKeyState[0];
+  var setOrsKey = orsKeyState[1];
+
+  var vehicleState = React.useState("camper"); // camper | scooter
+  var vehicle = vehicleState[0];
+  var setVehicle = vehicleState[1];
+
+  var showSettingsState = React.useState(false);
+  var showSettings = showSettingsState[0];
+  var setShowSettings = showSettingsState[1];
+
+  var originTextState = React.useState("");
+  var originText = originTextState[0];
+  var setOriginText = originTextState[1];
+  var originState = React.useState(null);
+  var origin = originState[0];
+  var setOrigin = originState[1];
+
+  var destTextState = React.useState("");
+  var destText = destTextState[0];
+  var setDestText = destTextState[1];
+  var destState = React.useState(null);
+  var dest = destState[0];
+  var setDest = destState[1];
+
+  var dimsState = React.useState({ height: 3.0, width: 2.3, weight: 3.5 });
+  var dims = dimsState[0];
+  var setDims = dimsState[1];
+
+  var allowHighwayState = React.useState(false);
+  var allowHighway = allowHighwayState[0];
+  var setAllowHighway = allowHighwayState[1];
+
+  var preferFewerLightsState = React.useState(true);
+  var preferFewerLights = preferFewerLightsState[0];
+  var setPreferFewerLights = preferFewerLightsState[1];
+
+  var loadingRouteState = React.useState(false);
+  var loadingRoute = loadingRouteState[0];
+  var setLoadingRoute = loadingRouteState[1];
+
+  var errorState = React.useState("");
+  var error = errorState[0];
+  var setError = errorState[1];
+
+  var camperResultState = React.useState(null); // {coords, steps, distance, duration}
+  var camperResult = camperResultState[0];
+  var setCamperResult = camperResultState[1];
+
+  var scooterAltsState = React.useState([]); // [{coords, distance, duration, steps, lights, selectedIdx}]
+  var scooterAlts = scooterAltsState[0];
+  var setScooterAlts = scooterAltsState[1];
+
+  var selectedAltState = React.useState(0);
+  var selectedAlt = selectedAltState[0];
+  var setSelectedAlt = selectedAltState[1];
+
+  React.useEffect(function(){
+    var unsub = auth.onAuthStateChanged(function(u){
+      setUser(u);
+      setLoadingAuth(false);
+    });
+    return unsub;
+  }, []);
+
+  React.useEffect(function(){
+    if (!user) return;
+    db.collection(NS + "config").doc("ors").get().then(function(doc){
+      if (doc.exists) {
+        var data = doc.data();
+        setOrsKey(data.apiKey || "");
+      } else {
+        setShowSettings(true);
+      }
+    });
+    db.collection(NS + "vehicles").doc(user.uid).get().then(function(doc){
+      if (doc.exists) {
+        var data = doc.data();
+        if (data.dims) setDims(data.dims);
+      }
+    });
+  }, [user]);
+
+  function saveOrsKey(key){
+    db.collection(NS + "config").doc("ors").set({ apiKey: key }, { merge: true }).then(function(){
+      setOrsKey(key);
+      setShowSettings(false);
+    });
+  }
+
+  function saveDims(next){
+    setDims(next);
+    if (user) {
+      db.collection(NS + "vehicles").doc(user.uid).set({ dims: next }, { merge: true });
+    }
+  }
+
+  function handleCalculate(){
+    setError("");
+    if (!orsKey) { setError("Manca la API key OpenRouteService. Vai in Impostazioni."); return; }
+    if (!origin || !dest) { setError("Seleziona partenza e destinazione dall'elenco suggerito."); return; }
+
+    setLoadingRoute(true);
+    setCamperResult(null);
+    setScooterAlts([]);
+
+    var coords = [[origin.lon, origin.lat], [dest.lon, dest.lat]];
+
+    if (vehicle === "camper") {
+      var options = {
+        vehicle_type: "hgv",
+        profile_params: {
+          restrictions: {
+            height: dims.height || 3.0,
+            width: dims.width || 2.3,
+            weight: dims.weight || 3.5
+          }
+        }
+      };
+      orsRequest(orsKey, "driving-hgv", coords, options, null)
+        .then(function(data){
+          var feature = data.features[0];
+          var latlon = feature.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
+          var seg = feature.properties.segments[0];
+          var steps = seg.steps.map(function(s){ return { instruction: s.instruction, distance: s.distance }; });
+          setCamperResult({
+            coords: latlon,
+            distance: seg.distance,
+            duration: seg.duration,
+            steps: steps
+          });
+          setLoadingRoute(false);
+        })
+        .catch(function(e){
+          setError(e.message);
+          setLoadingRoute(false);
+        });
+    } else {
+      var scOptions = {};
+      if (!allowHighway) scOptions.avoid_features = ["highways"];
+      var altOpt = { target_count: 3, weight_factor: 1.6, share_factor: 0.6 };
+
+      orsRequest(orsKey, "driving-car", coords, scOptions, altOpt)
+        .then(function(data){
+          var features = data.features;
+          var alts = features.map(function(f){
+            var latlon = f.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
+            var seg = f.properties.segments[0];
+            var steps = seg.steps.map(function(s){ return { instruction: s.instruction, distance: s.distance }; });
+            return { coords: latlon, distance: seg.distance, duration: seg.duration, steps: steps, lights: null };
+          });
+          setScooterAlts(alts);
+          setSelectedAlt(0);
+          setLoadingRoute(false);
+
+          if (preferFewerLights) {
+            alts.forEach(function(alt, idx){
+              countTrafficLights(alt.coords, function(count){
+                setScooterAlts(function(prev){
+                  var next = prev.slice();
+                  if (next[idx]) next[idx] = Object.assign({}, next[idx], { lights: count });
+                  return next;
+                });
+              });
+            });
+          }
+        })
+        .catch(function(e){
+          setError(e.message);
+          setLoadingRoute(false);
+        });
+    }
+  }
+
+  if (loadingAuth) {
+    return <div className="center-screen"><div className="brand-mark">🛰️</div></div>;
+  }
+
+  if (!user) {
+    return <LoginScreen />;
+  }
+
+  var mapAltRoutes = null;
+  var mapRoute = null;
+  if (vehicle === "scooter" && scooterAlts.length > 0) {
+    mapAltRoutes = scooterAlts.map(function(a, i){
+      return { coords: a.coords, selected: i === selectedAlt };
+    });
+  } else if (vehicle === "camper" && camperResult) {
+    mapRoute = camperResult.coords;
+  }
+
+  return (
+    <div className="app">
+      <div className="topbar">
+        <div className="brand">
+          <div className="brand-mark">🛰️</div>
+          <div>
+            <div className="brand-name">SatNav</div>
+            <div className="brand-sub">{vehicle === "camper" ? "Modalità camper" : "Modalità scooter"}</div>
+          </div>
+        </div>
+        <button className="icon-btn" onClick={function(){ setShowSettings(!showSettings); }}>⚙️</button>
+      </div>
+
+      <div className="content">
+        {showSettings && (
+          <SettingsPanel orsKey={orsKey} onSave={saveOrsKey} />
+        )}
+
+        <div className="vehicle-toggle">
+          <button className={vehicle === "camper" ? "active" : ""} onClick={function(){ setVehicle("camper"); setScooterAlts([]); setCamperResult(null); }}>🚐 Camper</button>
+          <button className={vehicle === "scooter" ? "active" : ""} onClick={function(){ setVehicle("scooter"); setScooterAlts([]); setCamperResult(null); }}>🛵 Scooter</button>
+        </div>
+
+        <div className="card">
+          <h3>Percorso</h3>
+          <AddressField
+            label="Partenza"
+            placeholder="Es. Via Roma 1, Milano"
+            value={originText}
+            onChange={setOriginText}
+            onSelect={function(s){ setOrigin(s); setOriginText(s.label); }}
+          />
+          <AddressField
+            label="Destinazione"
+            placeholder="Es. Piazza Duomo, Firenze"
+            value={destText}
+            onChange={setDestText}
+            onSelect={function(s){ setDest(s); setDestText(s.label); }}
+          />
+        </div>
+
+        {vehicle === "camper" && (
+          <React.Fragment>
+            <div className="banner">
+              I dati su ponti bassi e strade strette provengono da OpenStreetMap: la copertura non è completa al 100%, specie su strade secondarie. Usa il buon senso e verifica sempre la segnaletica reale.
+            </div>
+            <CamperForm dims={dims} onChange={saveDims} />
+          </React.Fragment>
+        )}
+
+        {vehicle === "scooter" && (
+          <ScooterForm
+            allowHighway={allowHighway}
+            onToggleHighway={setAllowHighway}
+            preferFewerLights={preferFewerLights}
+            onTogglePreferLights={setPreferFewerLights}
+          />
+        )}
+
+        {error && <div className="error-box">{error}</div>}
+
+        <button className="btn-primary" onClick={handleCalculate} disabled={loadingRoute}>
+          {loadingRoute ? <span><span className="spinner"></span>Calcolo in corso...</span> : "Calcola percorso"}
+        </button>
+
+        {(camperResult || scooterAlts.length > 0) && (
+          <div style={{ marginTop: "16px" }}>
+            <MapView route={mapRoute} altRoutes={mapAltRoutes} origin={origin} dest={dest} />
+          </div>
+        )}
+
+        {vehicle === "camper" && camperResult && (
+          <React.Fragment>
+            <div className="card">
+              <h3>Riepilogo</h3>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: "22px", fontWeight: 700 }}>{formatKm(camperResult.distance)}</div>
+                  <div style={{ color: "var(--muted)", fontSize: "13px" }}>{formatDuration(camperResult.duration)}</div>
+                </div>
+                <div style={{ fontSize: "12.5px", color: "var(--muted)", textAlign: "right" }}>
+                  H {dims.height}m · L {dims.width}m · P {dims.weight}t
+                </div>
+              </div>
+            </div>
+            <StepsList steps={camperResult.steps} />
+          </React.Fragment>
+        )}
+
+        {vehicle === "scooter" && scooterAlts.length > 0 && (
+          <React.Fragment>
+            <div className="card">
+              <h3>Alternative</h3>
+              {scooterAlts.map(function(alt, i){
+                return (
+                  <div
+                    key={i}
+                    className={"alt-card" + (i === selectedAlt ? " selected" : "")}
+                    onClick={function(){ setSelectedAlt(i); }}
+                  >
+                    <div>
+                      <div className="alt-label">Itinerario {String.fromCharCode(65 + i)}</div>
+                      <div className="alt-dist">{formatKm(alt.distance)}</div>
+                      <div style={{ color: "var(--muted)", fontSize: "12px" }}>{formatDuration(alt.duration)}</div>
+                    </div>
+                    {preferFewerLights && (
+                      <div className="alt-lights">
+                        <b>{alt.lights === null ? "…" : "~" + alt.lights}</b>
+                        <small>semafori</small>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <StepsList steps={scooterAlts[selectedAlt] ? scooterAlts[selectedAlt].steps : []} />
+          </React.Fragment>
+        )}
+      </div>
+    </div>
+  );
+}
+
+var root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('sw.js');
+    });
+  }
+</script>
+</body>
+</html>
