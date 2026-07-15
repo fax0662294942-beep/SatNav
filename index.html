@@ -259,7 +259,7 @@ function orsRequest(orsKey, profile, coordinates, options, alternativeRoutes){
   });
 }
 
-function countTrafficLights(coordsLatLon, callback){
+function countTrafficLightsOnce(coordsLatLon){
   // coordsLatLon: array of [lat, lon]
   // decimate to keep query size reasonable
   var maxPoints = 300;
@@ -273,16 +273,47 @@ function countTrafficLights(coordsLatLon, callback){
   var coordStr = pts.map(function(p){ return p[0] + "," + p[1]; }).join(",");
   var query = "[out:json][timeout:25];node(around:22," + coordStr + ")[highway=traffic_signals];out ids;";
 
-  fetch("https://overpass-api.de/api/interpreter", {
+  return fetch("https://overpass-api.de/api/interpreter", {
     method: "POST",
     body: "data=" + encodeURIComponent(query)
-  })
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      var count = (data.elements || []).length;
-      callback(count);
-    })
-    .catch(function(){ callback(null); });
+  }).then(function(r){
+    if (!r.ok) throw new Error("overpass status " + r.status);
+    return r.json();
+  }).then(function(data){
+    return (data.elements || []).length;
+  });
+}
+
+function countTrafficLightsWithRetry(coordsLatLon, attemptsLeft){
+  return countTrafficLightsOnce(coordsLatLon).catch(function(err){
+    if (attemptsLeft > 0) {
+      return new Promise(function(resolve){ setTimeout(resolve, 1200); })
+        .then(function(){ return countTrafficLightsWithRetry(coordsLatLon, attemptsLeft - 1); });
+    }
+    throw err;
+  });
+}
+
+// Processes routes ONE AT A TIME (Overpass public server rejects parallel requests).
+// onEach(idx, count|null) is called as each result (or failure) comes in.
+function countTrafficLightsSequential(routesCoords, onEach){
+  var i = 0;
+  function next(){
+    if (i >= routesCoords.length) return;
+    var idx = i;
+    i = i + 1;
+    countTrafficLightsWithRetry(routesCoords[idx], 1)
+      .then(function(count){
+        onEach(idx, count);
+      })
+      .catch(function(){
+        onEach(idx, "error");
+      })
+      .then(function(){
+        setTimeout(next, 500);
+      });
+  }
+  next();
 }
 
 // ---------- small UI pieces ----------
@@ -683,13 +714,12 @@ function App(){
           setLoadingRoute(false);
 
           if (preferFewerLights) {
-            alts.forEach(function(alt, idx){
-              countTrafficLights(alt.coords, function(count){
-                setScooterAlts(function(prev){
-                  var next = prev.slice();
-                  if (next[idx]) next[idx] = Object.assign({}, next[idx], { lights: count });
-                  return next;
-                });
+            var routesCoords = alts.map(function(a){ return a.coords; });
+            countTrafficLightsSequential(routesCoords, function(idx, result){
+              setScooterAlts(function(prev){
+                var next = prev.slice();
+                if (next[idx]) next[idx] = Object.assign({}, next[idx], { lights: result });
+                return next;
               });
             });
           }
@@ -826,7 +856,7 @@ function App(){
                     </div>
                     {preferFewerLights && (
                       <div className="alt-lights">
-                        <b>{alt.lights === null ? "…" : "~" + alt.lights}</b>
+                        <b>{alt.lights === null ? "…" : (alt.lights === "error" ? "N/D" : "~" + alt.lights)}</b>
                         <small>semafori</small>
                       </div>
                     )}
